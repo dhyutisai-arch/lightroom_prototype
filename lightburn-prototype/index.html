@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LightBurn CAD/CAM Laser Cutting Prototype</title>
+    <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+    <!-- 1. Menubar -->
+    <header class="menubar">
+        <div class="brand-label">
+            <span>⚡ LIGHTBURN</span>
+            <span class="brand-badge">PROTOTYPE</span>
+        </div>
+        <div class="menu-item">File</div>
+        <div class="menu-item">Edit</div>
+        <div class="menu-item">Tools</div>
+        <div class="menu-item">Arrange</div>
+        <div class="menu-item">Laser</div>
+        <div class="menu-item">Window</div>
+        <div class="menu-item">Help</div>
+    </header>
+
+    <!-- 2. Main Action Toolbar -->
+    <section class="toolbar">
+        <button class="btn-tb" id="btnLoadSample" title="Load Sample Laser Project">📁 Sample Coaster</button>
+        <button class="btn-tb" id="btnSaveProject" title="Save Project (.lbrn-proto)">💾 Save</button>
+        <button class="btn-tb" id="btnImportSvg" title="Import SVG Vector Artwork">📥 Import SVG</button>
+        <input type="file" id="svgFileInput" accept=".svg" style="display: none;">
+        
+        <div class="tb-separator"></div>
+
+        <button class="btn-tb primary" id="btnPreview" title="Simulate Laser Job (Alt+P)">▶ Preview (Alt+P)</button>
+        <button class="btn-tb" id="btnExportGcode" title="Download Standard GRBL G-Code">⚡ Export G-Code</button>
+        
+        <div class="tb-separator"></div>
+
+        <span style="font-size: 11px; color: var(--text-dim); margin-left: auto;" id="selectionInfo">No selection</span>
+    </section>
+
+    <!-- 3. Workspace Layout -->
+    <main class="main-workspace">
+        <!-- 3A. Left Toolbox -->
+        <aside class="left-toolbox">
+            <button class="tool-btn active" data-tool="select" title="Select & Transform (S / V)">↖</button>
+            <button class="tool-btn" data-tool="rect" title="Rectangle Tool (R)">▭</button>
+            <button class="tool-btn" data-tool="circle" title="Ellipse / Circle Tool (C)">○</button>
+            <button class="tool-btn" data-tool="polygon" title="Polygon Tool (P)">⬡</button>
+            <button class="tool-btn" data-tool="line" title="Polyline / Pen Tool (L)">✎</button>
+            <button class="tool-btn" data-tool="pan" title="Pan Canvas (Space + Drag)">✋</button>
+            
+            <div style="width: 24px; height: 1px; background: var(--border-color); margin: 4px 0;"></div>
+
+            <button class="tool-btn" data-tool="test_grid" title="Generate Material Test Grid Matrix" style="color: #f59e0b;">▦</button>
+        </aside>
+
+        <!-- 3B. Center Canvas Viewport with Rulers -->
+        <section class="canvas-wrapper">
+            <div class="ruler-corner"></div>
+            <canvas id="rulerTop"></canvas>
+            <canvas id="rulerLeft"></canvas>
+            <div class="canvas-viewport">
+                <canvas id="workCanvas"></canvas>
+            </div>
+        </section>
+
+        <!-- 3C. Right Sidebar Dock -->
+        <aside class="right-sidebar">
+            <nav class="sidebar-tabs">
+                <button class="panel-tab-btn active" data-tab="tabCuts">Cuts / Layers</button>
+                <button class="panel-tab-btn" data-tab="tabLaser">Laser Control</button>
+                <button class="panel-tab-btn" data-tab="tabMaterials">Materials</button>
+                <button class="panel-tab-btn" data-tab="tabGCode">G-Code</button>
+                <button class="panel-tab-btn" data-tab="tabConsole">Console</button>
+            </nav>
+
+            <div class="sidebar-content">
+                <!-- Tab 1: Cuts / Layers -->
+                <div class="tab-content active" id="tabCuts">
+                    <div class="layers-table-container">
+                        <table class="layers-table">
+                            <thead>
+                                <tr>
+                                    <th>Layer</th>
+                                    <th>Mode</th>
+                                    <th>Spd</th>
+                                    <th>Pwr</th>
+                                    <th>Pass</th>
+                                    <th>Out</th>
+                                    <th>Air</th>
+                                </tr>
+                            </thead>
+                            <tbody id="layersTableBody">
+                                <!-- Rendered dynamically by layers.js -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Shape Dimensions / Properties -->
+                    <div class="laser-panel-section">
+                        <div class="panel-header-title">Shape Properties</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px;">
+                            <div>
+                                <label style="color: var(--text-dim);">Width (mm):</label>
+                                <input type="text" id="propWidth" class="layer-mode-select" readonly value="0">
+                            </div>
+                            <div>
+                                <label style="color: var(--text-dim);">Height (mm):</label>
+                                <input type="text" id="propHeight" class="layer-mode-select" readonly value="0">
+                            </div>
+                            <div>
+                                <label style="color: var(--text-dim);">X (mm):</label>
+                                <input type="text" id="propX" class="layer-mode-select" readonly value="0">
+                            </div>
+                            <div>
+                                <label style="color: var(--text-dim);">Y (mm):</label>
+                                <input type="text" id="propY" class="layer-mode-select" readonly value="0">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Laser Control -->
+                <div class="tab-content" id="tabLaser">
+                    <div class="laser-panel-section">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span class="panel-header-title">Device</span>
+                            <span style="font-size: 11px; color: #22c55e;">● GRBL 1.1f (Ready)</span>
+                        </div>
+                        <div class="laser-action-grid">
+                            <button class="btn-laser-start" id="btnStartJob">▶ START</button>
+                            <button class="btn-laser-frame" id="btnFrame">⛶ FRAME</button>
+                            <button class="btn-laser-stop" id="btnStop">■ STOP / PAUSE</button>
+                        </div>
+                    </div>
+
+                    <!-- Jog Controls -->
+                    <div class="laser-panel-section">
+                        <div class="panel-header-title">Jog Controls</div>
+                        <div class="jog-grid">
+                            <div></div>
+                            <button class="btn-jog" data-axis="Y" data-dir="1">Y+</button>
+                            <div></div>
+
+                            <button class="btn-jog" data-axis="X" data-dir="-1">X-</button>
+                            <button class="btn-jog jog-home" id="btnHome" title="Home Machine (0,0)">⌂</button>
+                            <button class="btn-jog" data-axis="X" data-dir="1">X+</button>
+
+                            <div></div>
+                            <button class="btn-jog" data-axis="Y" data-dir="-1">Y-</button>
+                            <div></div>
+                        </div>
+
+                        <div class="jog-step-row">
+                            <span>Step Distance:</span>
+                            <select id="jogStep" class="jog-step-select">
+                                <option value="0.5">0.5 mm</option>
+                                <option value="1">1.0 mm</option>
+                                <option value="10" selected>10.0 mm</option>
+                                <option value="50">50.0 mm</option>
+                                <option value="100">100.0 mm</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Materials Library -->
+                <div class="tab-content" id="tabMaterials">
+                    <div class="panel-header-title">Material Settings Library</div>
+                    <div class="materials-container" id="materialsList">
+                        <!-- Rendered by materials.js -->
+                    </div>
+                </div>
+
+                <!-- Tab 4: G-Code Viewer -->
+                <div class="tab-content" id="tabGCode">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span class="panel-header-title">Generated G-Code</span>
+                    </div>
+                    <div class="gcode-viewer-area" id="gcodeOutput">; Click Export or Start to generate G-Code...</div>
+                </div>
+
+                <!-- Tab 5: Terminal / Console -->
+                <div class="tab-content" id="tabConsole">
+                    <div class="panel-header-title">Virtual GRBL Console</div>
+                    <div class="terminal-wrapper">
+                        <div class="terminal-log" id="consoleLog"></div>
+                        <div class="terminal-input-bar">
+                            <input type="text" id="terminalInput" class="terminal-input" placeholder="Type GRBL command (e.g. ?, $H, $$) and press Enter...">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- 4. Bottom Color Palette Bar (C00 to C15) -->
+    <section class="bottom-palette-bar">
+        <span class="palette-label">Layers:</span>
+        <div class="palette-swatch-list" id="colorPalette">
+            <!-- Rendered by layers.js -->
+        </div>
+    </section>
+
+    <!-- 5. Status Bar -->
+    <footer class="statusbar">
+        <div class="status-left">
+            <span class="status-indicator"></span>
+            <span>Controller: GRBL 1.1f [Virtual Mode]</span>
+            <span style="color: var(--border-light);">|</span>
+            <span id="statusCoords">X: 0.0 mm | Y: 0.0 mm</span>
+        </div>
+        <div class="status-right">
+            <span>Bed: 400 x 400 mm</span>
+            <span style="color: var(--border-light);">|</span>
+            <span>Units: mm</span>
+        </div>
+    </footer>
+
+    <!-- 6. LightBurn Preview Modal (Alt+P) -->
+    <div class="modal-overlay" id="previewModal">
+        <div class="preview-modal-dialog">
+            <header class="modal-header">
+                <div class="modal-title">
+                    <span>⚡ LightBurn Preview & Laser Simulation</span>
+                </div>
+                <button class="modal-close-btn" id="btnClosePreview" title="Close Preview">✕</button>
+            </header>
+
+            <div class="preview-body">
+                <div class="preview-canvas-col">
+                    <canvas id="previewCanvas" width="580" height="480"></canvas>
+                </div>
+
+                <aside class="preview-telemetry-col">
+                    <div class="telemetry-group">
+                        <div class="telemetry-label">Estimated Job Time</div>
+                        <div class="telemetry-val" id="simEstTime">00:00</div>
+                    </div>
+                    <div class="telemetry-group">
+                        <div class="telemetry-label">Cut Distance</div>
+                        <div class="telemetry-val" id="simCutDist">0 mm</div>
+                    </div>
+                    <div class="telemetry-group">
+                        <div class="telemetry-label">Rapid Distance</div>
+                        <div class="telemetry-val" id="simRapidDist">0 mm</div>
+                    </div>
+                    <div class="telemetry-group">
+                        <div class="telemetry-label">G-Code Lines</div>
+                        <div class="telemetry-val" id="simLineCount">0</div>
+                    </div>
+
+                    <div style="font-size: 10px; color: var(--text-dim); line-height: 1.4; margin-top: auto;">
+                        <span style="color: #ff4444;">---</span> Red Dashed: Rapid G0 Moves<br>
+                        <span style="color: #00ff88;">───</span> Solid Green: Active Laser Cuts
+                    </div>
+                </aside>
+            </div>
+
+            <footer class="preview-controls-bar">
+                <button class="btn-sim-play" id="btnPlaySimulation">▶ Play</button>
+                <input type="range" id="previewScrubber" class="scrubber-slider" min="0" max="1" step="0.002" value="0">
+                <div class="sim-speed-toggles">
+                    <button class="sim-spd-btn" data-speed="1">1x</button>
+                    <button class="sim-spd-btn active" data-speed="2">2x</button>
+                    <button class="sim-spd-btn" data-speed="5">5x</button>
+                    <button class="sim-spd-btn" data-speed="10">10x</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>
